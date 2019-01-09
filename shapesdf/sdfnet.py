@@ -32,8 +32,8 @@ class SFDNet(nn.Module):
                 base_layers.append(nn.Dropout(p=dropout))
             if layer_idx == 0:
                 # First layer receives shape features stacked with 3 coordinates 
-                # inp_neurons = inp_neurons + 3 # TODO put back
-                inp_neurons = 3
+                inp_neurons = inp_neurons + 3 # TODO put back
+                # inp_neurons = 3
             base_layers.append(nn.Conv1d(inp_neurons, out_neurons, 1))
             base_layers.append(nn.ReLU())
         base_layers.append(nn.Conv1d(inter_neurons[-1], 1, 1))
@@ -50,9 +50,9 @@ class SFDNet(nn.Module):
         sampled_points = sample['sampled_points']
         features = shape_features.unsqueeze(2).repeat(1, 1, sampled_points.size(2))
         # TODO put back
-        # stacked_features = torch.cat((sampled_points, features), 1)
-        # pred_dists = self.sdfpredictor(stacked_features)
-        pred_dists = self.sdfpredictor(sampled_points)
+        stacked_features = torch.cat((sampled_points, features), 1)
+        pred_dists = self.sdfpredictor(stacked_features)
+        # pred_dists = self.sdfpredictor(sampled_points)
         return pred_dists
 
 

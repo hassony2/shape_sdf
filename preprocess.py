@@ -10,8 +10,8 @@ import argutils
 from handobjectdatasets import shapenet, synthgrasps, handataset
 from handobjectdatasets.queries import BaseQueries, TransQueries
 
-from shapesfd.sfdnet import SFDNet
-from shapesfd.imgutils import plot_sdf
+from shapesdf.sdfnet import SFDNet
+from shapesdf.imgutils import plot_sdf
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -39,6 +39,8 @@ if __name__ == "__main__":
     parser.add_argument('--lr', type=float, default=0.01)
     parser.add_argument('--momentum', type=float, default=0.1)
 
+    # Saving params
+    parser.add_argument('--res_folder', default='results/tmp')
     args = parser.parse_args()
     argutils.print_args(args)
 
@@ -61,6 +63,7 @@ if __name__ == "__main__":
         model = SFDNet()
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    criterion = torch.nn.L1Loss()
     model.cuda()
     for idx in range(len(pose_dataset) - args.offset):
         verts, faces = pose_dataset.get_obj_verts_faces(idx + args.offset)
@@ -79,19 +82,22 @@ if __name__ == "__main__":
         uniform_grid = torch.Tensor(grid.reshape(3, -1)).unsqueeze(0).repeat(args.batch_size, 1, 1).cuda()
         # Randomly sample cube of in [-1, 1]^3
         fig = plt.figure()
-        res_folder = 'results/sfd_1'
+        # CUBE SAMPLING
+        cube_distances = trimesh.proximity.signed_distance(mesh, grid.reshape(3, -1).transpose())
+        distance_cube = cube_distances.reshape(grid_point_nb, grid_point_nb, grid_point_nb)
+        cube_dists_pt = torch.Tensor(cube_distances).unsqueeze(0).repeat(args.batch_size, 1, 1).cuda()
         for step_idx in range(1000):
             points = np.random.uniform(-1, 1, (args.point_nb, 3))
-            distances = trimesh.proximity.signed_distance(mesh, grid.reshape(3, -1).transpose())
+            distances = trimesh.proximity.signed_distance(mesh, points) # TODO put back
             dists_pt = torch.Tensor(distances).unsqueeze(0).repeat(args.batch_size, 1, 1).cuda()
-            # distances = trimesh.proximity.signed_distance(mesh, points) # TODO put back
-            # dists_pt = torch.Tensor(distances).unsqueeze(0).repeat(args.batch_size, 1, 1).cuda()
             points_pt = torch.Tensor(points).unsqueeze(0).repeat(args.batch_size, 1, 1).cuda()
-            # sample = {TransQueries.objpoints3d: vertices_pt, 'sampled_points': points_pt.permute(0, 2, 1)} # TODO put back
-            sample = {TransQueries.objpoints3d: vertices_pt, 'sampled_points': uniform_grid}
+            sample = {TransQueries.objpoints3d: vertices_pt, 'sampled_points': points_pt.permute(0, 2, 1)} # TODO put back
+            # CUBE SAMPLING
+            # sample = {TransQueries.objpoints3d: vertices_pt, 'sampled_points': uniform_grid}
 
             pred_dists = model(sample)
-            loss_val = torch.mean((pred_dists - dists_pt)**2)
+            # loss_val = torch.mean((pred_dists - dists_pt)**2)
+            loss_val = criterion(pred_dists, dists_pt)
             optimizer.zero_grad()
             loss_val.backward()
             optimizer.step()
@@ -99,11 +105,11 @@ if __name__ == "__main__":
                 cube_sample = {TransQueries.objpoints3d:vertices_pt, 'sampled_points': uniform_grid}
                 cube_dists = model(cube_sample)
                 cube_dists = cube_dists.cpu().detach()[0].view(grid_point_nb, grid_point_nb, grid_point_nb)
-                dists_pt = dists_pt.cpu().detach()[0].view(grid_point_nb, grid_point_nb, grid_point_nb)
-                plot_sdf(cube_dists, gt=dists_pt, grid_step=4)
-                os.makedirs(res_folder, exist_ok=True)
+                # dists_pt = dists_pt.cpu().detach()[0].view(grid_point_nb, grid_point_nb, grid_point_nb)
+                plot_sdf(cube_dists, gt=distance_cube, grid_step=4)
+                os.makedirs(args.res_folder, exist_ok=True)
                 plt.savefig(
-                        os.path.join(res_folder, '{}_{:06d}.png'.format(
+                        os.path.join(args.res_folder, '{}_{:06d}.png'.format(
                         idx, step_idx)))
                 plt.clf()
                 print('cube !')
