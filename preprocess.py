@@ -1,4 +1,5 @@
 import argparse
+from copy import deepcopy
 import os
 
 from matplotlib import pyplot as plt
@@ -7,11 +8,13 @@ import torch
 import trimesh
 
 import argutils
-from handobjectdatasets import shapenet, synthgrasps, handataset
+from handobjectdatasets import shapenet, synthgrasps, shapedataset
 from handobjectdatasets.queries import BaseQueries, TransQueries
 
 from shapesdf.sdfnet import SFDNet
-from shapesdf.imgutils import plot_sdf
+from shapesdf.imgutils import plot_sdf, visualize_sample
+from shapesdf.evalutils import AverageMeters
+from shapesdf.monitoring import Monitor, get_save_folder
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -26,21 +29,35 @@ if __name__ == "__main__":
                 ])
 
     parser.add_argument('--use_cache', action='store_true', help='Use cache')
-    parser.add_argument('--batch_size', type=int, default=2, help='Use cache')
     parser.add_argument('--canonical', action='store_true', help='Use cache')
     parser.add_argument(
             '--mini_factor', type=float, default=0.01, help='Ratio in data to use (in ]0, 1[)')
     parser.add_argument(
             '--split', type=str, default='test', help='Usually [train|test]')
     parser.add_argument('--point_nb', type=int, default=10, help='point_nb^3 is the number of points sampled in the cube')
+    parser.add_argument('--sdf_point_nb', type=int, default=200, help='Points to sample in the cube')
     parser.add_argument('--offset', type=int, default=0, help='point_nb^3 is the number of points sampled in the cube')
 
+    # Model params
+    parser.add_argument('--hidden_neuron_nb', type=int, default=64)
+    parser.add_argument('--hidden_layer_nb', type=int, default=2)
+
+    # Parallelization params
+    parser.add_argument('--batch_size', type=int, default=2)
+    parser.add_argument('--workers', type=int, default=8)
+
     # Optimizer params
+    parser.add_argument('--epoch_nb', type=int, default=1000)
     parser.add_argument('--lr', type=float, default=0.01)
     parser.add_argument('--momentum', type=float, default=0.1)
 
     # Saving params
-    parser.add_argument('--res_folder', default='results/tmp')
+    parser.add_argument('--res_folder', default='results')
+
+    # Visualize params
+    parser.add_argument('--display_freq', type=int, default=10)
+    parser.add_argument('--epoch_display_freq', type=int, default=1)
+
     args = parser.parse_args()
     argutils.print_args(args)
 
@@ -55,63 +72,79 @@ if __name__ == "__main__":
                 split=args.split,
                 use_cache=args.use_cache,
                 root_palm=False,
-                version=33,
+                version=25,
                 mini_factor=args.mini_factor,
                 mode='obj',
-                filter_class_ids=None)
+                filter_class_ids=None,
+                use_external_points=False)
 
-        model = SFDNet()
+        model = SFDNet(inter_neurons=[args.hidden_neuron_nb] * args.hidden_layer_nb)
+    queries = [TransQueries.objverts3d, BaseQueries.objfaces, TransQueries.sdf, TransQueries.sdf_points, TransQueries.objpoints3d]
+    dataset = shapedataset.ShapeDataset(pose_dataset, queries=queries, sdf_point_nb=args.sdf_point_nb)
+    train_loader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=int(args.workers),
+        drop_last=True)
 
+    # Initialize optim tools
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    criterion = torch.nn.L1Loss()
+
     model.cuda()
-    for idx in range(len(pose_dataset) - args.offset):
-        verts, faces = pose_dataset.get_obj_verts_faces(idx + args.offset)
-        print(verts.shape)
-        # Render canonical
-        centroid = verts.mean(0)
-        centered_verts = verts - centroid
-        max_radius = np.linalg.norm(centered_verts, 2, 1).max()
-        canonical_verts = centered_verts / max_radius
-        mesh = trimesh.Trimesh(vertices=canonical_verts,faces=faces)
-        vertices_pt = torch.Tensor(canonical_verts).unsqueeze(0).repeat(args.batch_size, 1, 1).cuda()
+    model.eval()
+    fig = plt.figure()
 
-        # Uniformly sample cube in [-1, 1]^3
-        grid_point_nb = 10
-        grid = np.mgrid[-1:1:complex(0, grid_point_nb), -1:1:complex(0, grid_point_nb), -1:1:complex(0, grid_point_nb)]
-        uniform_grid = torch.Tensor(grid.reshape(3, -1)).unsqueeze(0).repeat(args.batch_size, 1, 1).cuda()
-        # Randomly sample cube of in [-1, 1]^3
-        fig = plt.figure()
-        # CUBE SAMPLING
-        cube_distances = trimesh.proximity.signed_distance(mesh, grid.reshape(3, -1).transpose())
-        distance_cube = cube_distances.reshape(grid_point_nb, grid_point_nb, grid_point_nb)
-        cube_dists_pt = torch.Tensor(cube_distances).unsqueeze(0).repeat(args.batch_size, 1, 1).cuda()
-        for step_idx in range(1000):
-            points = np.random.uniform(-1, 1, (args.point_nb, 3))
-            distances = trimesh.proximity.signed_distance(mesh, points) # TODO put back
-            dists_pt = torch.Tensor(distances).unsqueeze(0).repeat(args.batch_size, 1, 1).cuda()
-            points_pt = torch.Tensor(points).unsqueeze(0).repeat(args.batch_size, 1, 1).cuda()
-            sample = {TransQueries.objpoints3d: vertices_pt, 'sampled_points': points_pt.permute(0, 2, 1)} # TODO put back
-            # CUBE SAMPLING
-            # sample = {TransQueries.objpoints3d: vertices_pt, 'sampled_points': uniform_grid}
+    # Uniformly sample cube in [-1, 1]^3
+    grid_point_nb = 40
+    grid = np.mgrid[-1:1:complex(0, grid_point_nb), -1:1:complex(0, grid_point_nb), -1:1:complex(0, grid_point_nb)]
+    uniform_grid = torch.Tensor(grid.reshape(3, -1)).unsqueeze(0).repeat(args.batch_size, 1, 1).cuda()
 
-            pred_dists = model(sample)
-            # loss_val = torch.mean((pred_dists - dists_pt)**2)
-            loss_val = criterion(pred_dists, dists_pt)
+    # Prepare logging
+    save_folder = get_save_folder(args.res_folder, args)
+    if os.path.exists(save_folder):
+        warnings.warn('Folder {} already exists!'.format(save_folder))
+    else:
+        print('Creating folder {}'.format(save_folder))
+        os.makedirs(save_folder, exist_ok=True)
+
+
+    hosting_folder = os.path.join(
+        '/meleze/data0/public_html/yhasson/experiments/sdf_debug',
+        save_folder)
+    monitor = Monitor(save_folder, hosting_folder=hosting_folder)
+    for epoch_idx in range(args.epoch_nb):
+        train_avg_meters = AverageMeters()
+        for sample_idx, sample in enumerate(train_loader):
+            results, loss_val = model(sample)
             optimizer.zero_grad()
             loss_val.backward()
+            print(loss_val.item())
             optimizer.step()
-            if step_idx % 5 == 0:
-                cube_sample = {TransQueries.objpoints3d:vertices_pt, 'sampled_points': uniform_grid}
-                cube_dists = model(cube_sample)
-                cube_dists = cube_dists.cpu().detach()[0].view(grid_point_nb, grid_point_nb, grid_point_nb)
-                # dists_pt = dists_pt.cpu().detach()[0].view(grid_point_nb, grid_point_nb, grid_point_nb)
-                plot_sdf(cube_dists, gt=distance_cube, grid_step=4)
-                os.makedirs(args.res_folder, exist_ok=True)
-                plt.savefig(
-                        os.path.join(args.res_folder, '{}_{:06d}.png'.format(
-                        idx, step_idx)))
-                plt.clf()
-                print('cube !')
-                print('loss: {}, pred min: {} max: {}, gt min: {} max: {}'.format(loss_val.item(), cube_dists.min().item(), cube_dists.max().item(), dists_pt.min().item(), dists_pt.max().item()))
-            print('loss: {}, pred min: {} max: {}, gt min: {} max: {}'.format(loss_val.item(), pred_dists.min().item(), pred_dists.max().item(), dists_pt.min().item(), dists_pt.max().item()))
+            
+            sample_vis = deepcopy(sample)
+            sample_vis[TransQueries.sdf_points] = uniform_grid.transpose(2, 1)
+            results_vis, _ = model(sample_vis, no_loss=True)
+
+            if sample_idx % args.display_freq == 0 and epoch_idx % args.epoch_display_freq == 0:
+                visualize_sample(sample, results_vis, fig)
+                save_path = os.path.join(save_folder, '{:06d}_{:06d}.png'.format(
+                        epoch_idx, sample_idx))
+                fig.savefig(save_path, bbox_inches='tight', dpi=190)
+                print('Saving sample to {}'.format(save_path))
+                fig.clf()
+            train_avg_meters.add_loss_value('loss', loss_val.item())
+
+        train_dict = {
+            meter_name: meter.avg
+            for meter_name, meter in
+            train_avg_meters.average_meters.items()
+        }
+        monitor.log_train(epoch_idx + 1, train_dict)
+        save_dict = {}
+        for key in train_dict:
+            save_dict[key] = {}
+            save_dict[key]['train'] = train_dict[key]
+        monitor.metrics.save_metrics(epoch_idx + 1, save_dict)
+        monitor.metrics.plot_metrics()
+

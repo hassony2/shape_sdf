@@ -9,7 +9,7 @@ class SFDNet(nn.Module):
     def __init__(self,
                  atlas_ico_divisions=3,
                  bottleneck_size=512,
-                 inter_neurons=[256, 256, 256],
+                 inter_neurons=[64, 64],
                  dropout=0):
         super().__init__()
         if atlas_ico_divisions == 3:
@@ -38,22 +38,36 @@ class SFDNet(nn.Module):
             base_layers.append(nn.ReLU())
         base_layers.append(nn.Conv1d(inter_neurons[-1], 1, 1))
         self.sdfpredictor = nn.Sequential(*base_layers)
+        self.criterion = torch.nn.L1Loss()
 
     def forward(self,
                 sample,
                 no_loss=False,
                 return_features=False,
                 force_objects=False):
-        inp_points3d = sample[TransQueries.objpoints3d]
+        # Prepare inputs/outputs
+        inp_points3d = sample[TransQueries.objpoints3d].float().cuda()
+        sampled_points = sample[TransQueries.sdf_points].float().cuda().transpose(2, 1)
+        sdf = sample[TransQueries.sdf].float().cuda()
 
+        results = {}
+
+        # Encode sampled points
         shape_features = self.encoder(inp_points3d)
-        sampled_points = sample['sampled_points']
+
+        # Stack shape features and sampled points
         features = shape_features.unsqueeze(2).repeat(1, 1, sampled_points.size(2))
-        # TODO put back
         stacked_features = torch.cat((sampled_points, features), 1)
+
+        # Predict signed distance values
         pred_dists = self.sdfpredictor(stacked_features)
-        # pred_dists = self.sdfpredictor(sampled_points)
-        return pred_dists
+        assert pred_dists.shape[1] == 1, 'sdf should have channel dim 1, got {}'.format(pred_dists.shape[1])
+        if no_loss:
+            loss = None
+        else:
+            loss = self.criterion(pred_dists[:, 0], sdf)
+        results['pred_dists'] = pred_dists[:, 0]
+        return results, loss
 
 
 class STN3d(nn.Module):
