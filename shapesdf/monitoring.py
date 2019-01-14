@@ -6,13 +6,14 @@ import plotly.offline as py
 import plotly.tools as pytools
 import plotly.graph_objs as go
 
-args_save = ['batch_size', 'mini_factor', 'sdf_point_nb', 'lr', 'momentum', 'hidden_layer_nb', 'hidden_neuron_nb']
+args_save = ['batch_size', 'mini_factor', 'optimizer', 'sdf_point_nb', 'lr', 'momentum', 'hidden_layer_nb', 'hidden_neuron_nb']
 args_corresps = {'batch_size': 'bs',
         'mini_factor': 'mf',
         'sdf_point_nb': 'sdf_pn',
         'hidden_layer_nb': 'lay_nb',
         'hidden_neuron_nb': 'neur_nb',
-        'momentum': 'mom'}
+        'momentum': 'mom',
+        'optimizer': 'optim'}
 
 def get_save_folder(root_folder, args, args_corresps=args_corresps, args_save=args_save):
     save_params = {}

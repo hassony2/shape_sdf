@@ -13,8 +13,7 @@ from handobjectdatasets import cubes, shapenet, synthgrasps, shapedataset
 from handobjectdatasets.queries import BaseQueries, TransQueries
 
 from shapesdf.sdfnet import SFDNet
-from shapesdf.imgutils import plot_sdf, visualize_sample
-from shapesdf.evalutils import AverageMeters
+from shapesdf.netscripts import epochpass
 from shapesdf.monitoring import Monitor, get_save_folder
 
 if __name__ == "__main__":
@@ -48,6 +47,7 @@ if __name__ == "__main__":
 
     # Optimizer params
     parser.add_argument('--epoch_nb', type=int, default=1000)
+    parser.add_argument('--optimizer', default='sgd', choices=['adam', 'sgd'])
     parser.add_argument('--lr', type=float, default=0.01)
     parser.add_argument('--momentum', type=float, default=0.1)
 
@@ -78,20 +78,23 @@ if __name__ == "__main__":
                 filter_class_ids=None,
                 use_external_points=False)
     elif args.dataset == 'cubes':
-        pose_dataset = cubes.Cubes(size=100)
+        pose_dataset = cubes.Cubes(size=1000, mini_factor=args.mini_factor)
 
     model = SFDNet(inter_neurons=[args.hidden_neuron_nb] * args.hidden_layer_nb)
     queries = [TransQueries.objverts3d, BaseQueries.objfaces, TransQueries.sdf, TransQueries.sdf_points, TransQueries.objpoints3d]
     dataset = shapedataset.ShapeDataset(pose_dataset, queries=queries, sdf_point_nb=args.sdf_point_nb)
     train_loader = torch.utils.data.DataLoader(
-        dataset,
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=int(args.workers),
-        drop_last=True)
+            dataset,
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=int(args.workers),
+            drop_last=True)
 
     # Initialize optim tools
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    if args.optimizer == 'adam':
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    elif args.optimizer == 'sgd':
+        optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 
     model.cuda()
     model.eval()
@@ -112,36 +115,17 @@ if __name__ == "__main__":
 
 
     hosting_folder = os.path.join(
-        '/meleze/data0/public_html/yhasson/experiments/sdf_debug',
-        save_folder)
+            '/meleze/data0/public_html/yhasson/experiments/sdf_debug',
+            save_folder)
     monitor = Monitor(save_folder, hosting_folder=hosting_folder)
     for epoch_idx in range(args.epoch_nb):
-        train_avg_meters = AverageMeters()
-        for sample_idx, sample in enumerate(train_loader):
-            results, loss_val = model(sample)
-            optimizer.zero_grad()
-            loss_val.backward()
-            print(loss_val.item())
-            optimizer.step()
-            
-            sample_vis = deepcopy(sample)
-            sample_vis[TransQueries.sdf_points] = uniform_grid.transpose(2, 1)
-            results_vis, _ = model(sample_vis, no_loss=True)
-
-            if sample_idx % args.display_freq == 0 and epoch_idx % args.epoch_display_freq == 0:
-                visualize_sample(sample, results_vis, fig)
-                save_path = os.path.join(save_folder, '{:06d}_{:06d}.png'.format(
-                        epoch_idx, sample_idx))
-                fig.savefig(save_path, bbox_inches='tight', dpi=190)
-                print('Saving sample to {}'.format(save_path))
-                fig.clf()
-            train_avg_meters.add_loss_value('loss', loss_val.item())
-
+        train_avg_meters = epochpass.epoch_pass(train_loader, model, epoch_idx, optimizer=optimizer, train=True, fig=fig,
+                save_folder=save_folder, vis_grid=uniform_grid, epoch_display_freq=args.epoch_display_freq, display_freq=args.display_freq)
         train_dict = {
-            meter_name: meter.avg
-            for meter_name, meter in
-            train_avg_meters.average_meters.items()
-        }
+                meter_name: meter.avg
+                for meter_name, meter in
+                train_avg_meters.average_meters.items()
+                }
         monitor.log_train(epoch_idx + 1, train_dict)
         save_dict = {}
         for key in train_dict:

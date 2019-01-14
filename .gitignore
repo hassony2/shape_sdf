@@ -1,4 +1,5 @@
 *.sw*
+*.lprof
 __pycache__
 
 data/
