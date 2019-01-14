@@ -1,6 +1,7 @@
 import argparse
 from copy import deepcopy
 import os
+import warnings
 
 from matplotlib import pyplot as plt
 import numpy as np
@@ -8,7 +9,7 @@ import torch
 import trimesh
 
 import argutils
-from handobjectdatasets import shapenet, synthgrasps, shapedataset
+from handobjectdatasets import cubes, shapenet, synthgrasps, shapedataset
 from handobjectdatasets.queries import BaseQueries, TransQueries
 
 from shapesdf.sdfnet import SFDNet
@@ -23,9 +24,8 @@ if __name__ == "__main__":
             type=str,
             default='synthgrasps',
             choices=[
-                'core50', 'fhbhands', 'ganhands', 'panoptic', 'shapenet',
-                'synthgrasps', 'synthands', 'synthobjs', 'stereohands', 'tomasreal',
-                'tzionas', 'yanademo', 'zimsynth'
+                'cubes', 'shapenet',
+                'synthgrasps', 'synthobjs'
                 ])
 
     parser.add_argument('--use_cache', action='store_true', help='Use cache')
@@ -77,8 +77,10 @@ if __name__ == "__main__":
                 mode='obj',
                 filter_class_ids=None,
                 use_external_points=False)
+    elif args.dataset == 'cubes':
+        pose_dataset = cubes.Cubes(size=100)
 
-        model = SFDNet(inter_neurons=[args.hidden_neuron_nb] * args.hidden_layer_nb)
+    model = SFDNet(inter_neurons=[args.hidden_neuron_nb] * args.hidden_layer_nb)
     queries = [TransQueries.objverts3d, BaseQueries.objfaces, TransQueries.sdf, TransQueries.sdf_points, TransQueries.objpoints3d]
     dataset = shapedataset.ShapeDataset(pose_dataset, queries=queries, sdf_point_nb=args.sdf_point_nb)
     train_loader = torch.utils.data.DataLoader(
