@@ -10,7 +10,6 @@ from handobjectdatasets.queries import BaseQueries, TransQueries
 from shapesdf.imgutils import plot_sdf, visualize_sample
 from shapesdf.evalutils import AverageMeters
 
-@profile
 def epoch_pass(loader, model, epoch_idx, optimizer=None, train=True, fig=None, save_folder=None, vis_grid=None, display_freq=10, epoch_display_freq=1):
     avg_meters = AverageMeters()
 

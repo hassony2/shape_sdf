@@ -40,7 +40,7 @@ def visualize_sample(sample, results, fig=None, grid_step=8, max_samples=2, cmap
     sample_nb = min(max_samples, preds.shape[0])
     row_nb = sample_nb * 2
 
-    for sample_idx in range(max_samples):
+    for sample_idx in range(sample_nb):
         ax = fig.add_subplot(2*sample_nb, col_nb, (2 * sample_idx) * col_nb + 1)
         batch_points = input_points[sample_idx]
         ax.scatter(batch_points[:, 1], batch_points[:, 2], alpha=0.2, s=2)
