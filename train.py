@@ -8,39 +8,32 @@ import numpy as np
 import torch
 import trimesh
 
-import argutils
-from handobjectdatasets import cubes, primitives, shapenet, synthgrasps, shapedataset
-from handobjectdatasets.queries import BaseQueries, TransQueries
-
+from shapesdf.datasets import cubes, primitives, shapedataset
+from shapesdf.datasets.queries import BaseQueries, TransQueries
 from shapesdf.sdfnet import SFDNet
 from shapesdf.netscripts import epochpass
 from shapesdf.monitoring import Monitor, get_save_folder
 from shapesdf import modelio
+from shapesdf import argutils
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
             '--dataset',
             type=str,
-            default='synthgrasps',
+            default='primitives',
             choices=[
-                'cubes', 'primitives', 'shapenet',
-                'synthgrasps', 'synthobjs'
+                'cubes', 'primitives',
                 ])
 
     parser.add_argument('--use_cache', action='store_true', help='Use cache')
-    parser.add_argument('--canonical', action='store_true', help='Use cache')
     parser.add_argument(
             '--mini_factor', type=float, default=0.01, help='Ratio in data to use (in ]0, 1[)')
-    parser.add_argument(
-            '--train_split', type=str, default='test', help='Usually [train|test]')
-    parser.add_argument('--point_nb', type=int, default=10, help='point_nb^3 is the number of points sampled in the cube')
     parser.add_argument('--sdf_point_nb', type=int, default=200, help='Points to sample in the cube')
-    parser.add_argument('--offset', type=int, default=0, help='point_nb^3 is the number of points sampled in the cube')
 
     # Model params
-    parser.add_argument('--hidden_neuron_nb', type=int, default=64)
-    parser.add_argument('--hidden_layer_nb', type=int, default=2)
+    parser.add_argument('--hidden_neuron_nb', type=int, default=64, help='Number of hidden layers')
+    parser.add_argument('--hidden_layer_nb', type=int, default=2, help='Number of hidden neurons in each hidden layer')
 
     # Parallelization params
     parser.add_argument('--batch_size', type=int, default=2)
@@ -50,16 +43,16 @@ if __name__ == "__main__":
     parser.add_argument('--epoch_nb', type=int, default=1000)
     parser.add_argument('--optimizer', default='sgd', choices=['adam', 'sgd'])
     parser.add_argument('--lr', type=float, default=0.01)
-    parser.add_argument('--momentum', type=float, default=0.1)
+    parser.add_argument('--momentum', type=float, default=0.1, help='Momentum for SGD optimizer')
 
     # Saving params
     parser.add_argument('--save_folder_root', default='results')
-    parser.add_argument('--pyapt_id')
+    parser.add_argument('--pyapt_id', help='Internal id to keep track of running experiments')
     parser.add_argument('--snapshot', type=int, default=10)
 
     # Visualize params
-    parser.add_argument('--display_freq', type=int, default=10)
-    parser.add_argument('--epoch_display_freq', type=int, default=1)
+    parser.add_argument('--display_freq', type=int, default=10, help='Batch display frequence')
+    parser.add_argument('--epoch_display_freq', type=int, default=1, help='Epoch display frequence')
 
     args = parser.parse_args()
     argutils.print_args(args)
@@ -74,23 +67,7 @@ if __name__ == "__main__":
 
     argutils.save_args(args, save_folder, 'opt')
 
-    if args.dataset == 'shapenet':
-        pose_dataset = shapenet.Shapenet(
-                split=args.train_split,
-                use_cache=args.use_cache,
-                mini_factor=args.mini_factor,
-                canonical=args.canonical)
-    elif args.dataset == 'synthgrasps':
-        pose_dataset = synthgrasps.SynthGrasps(
-                split=args.train_split,
-                use_cache=args.use_cache,
-                root_palm=False,
-                version=25,
-                mini_factor=args.mini_factor,
-                mode='obj',
-                filter_class_ids=None,
-                use_external_points=False)
-    elif args.dataset == 'cubes':
+    if args.dataset == 'cubes':
         pose_dataset = cubes.Cubes(size=1000, mini_factor=args.mini_factor)
     elif args.dataset == 'primitives':
         pose_dataset = primitives.Primitives(size=1000, mini_factor=args.mini_factor)
@@ -121,9 +98,7 @@ if __name__ == "__main__":
     uniform_grid = torch.Tensor(grid.reshape(3, -1)).unsqueeze(0).repeat(args.batch_size, 1, 1).cuda()
 
 
-    hosting_folder = os.path.join(
-            '/meleze/data0/public_html/yhasson/experiments/sdf_debug',
-            save_folder)
+    hosting_folder = None  # Path to folder where to save plotly graphs
     monitor = Monitor(save_folder, hosting_folder=hosting_folder)
     best_score = None
     for epoch_idx in range(args.epoch_nb):

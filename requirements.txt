@@ -1,0 +1,10 @@
+matplotlib=3.0.2=py37h8a2030e_1
+numpy=1.15.4=py37h1d66e8a_0
+opencv=3.4.2=py37h6fd60c2_1
+pillow=5.3.0=py37h34e0f95_0
+plotly=3.4.2=py37_0
+pytorch=0.4.1=py37_py36_py35_py27__9.0.176_7.1.2_2
+scikit-learn=0.19.2=py37h4989274_0
+scipy=1.1.0=py37hfa4b5c9_1
+trimesh=2.33.23=py_0
+tqdm==4.28.1

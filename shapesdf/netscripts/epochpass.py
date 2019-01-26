@@ -5,8 +5,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from handobjectdatasets.queries import BaseQueries, TransQueries
-
+from shapesdf.datasets.queries import BaseQueries, TransQueries
 from shapesdf.imgutils import plot_sdf, visualize_sample
 from shapesdf.evalutils import AverageMeters
 

@@ -3,7 +3,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 import torch
 
-from handobjectdatasets.queries import BaseQueries, TransQueries
+from shapesdf.datasets.queries import BaseQueries, TransQueries
 
 def signed_dist_img(sdf_points, sdf_vals, point_min=-1, point_max=1, cube_resolution=40):
     """
@@ -30,8 +30,11 @@ def visualize_sample(sample, results, fig=None, grid_step=8, max_samples=2, cmap
         fig = plt.figure(figsize=(3, 2))
     preds = results['pred_dists'].detach().cpu()
     side_size = int(round(np.power(preds.shape[1], 1/3)))
-    preds = preds.reshape(preds.shape[0], side_size, side_size, side_size)
+
+    # Reshape prediction into cube !
+    preds = preds.view(preds.shape[0], side_size, side_size, side_size)
     col_nb = int(preds.shape[1] / grid_step) + 1  # scatter (1) + grid
+
     input_points = sample[TransQueries.objpoints3d]
     sdf_vals = sample[TransQueries.sdf]
     sdf_points = sample[TransQueries.sdf_points]

@@ -45,7 +45,8 @@ class Monitor():
 
         self.plotly = plotly
         self.hosting_folder = hosting_folder
-        os.makedirs(self.hosting_folder, exist_ok=True)
+        if hosting_folder is not None:
+            os.makedirs(self.hosting_folder, exist_ok=True)
         self.metrics = Metrics(checkpoint, hosting_folder=self.hosting_folder)
 
     def log_train(self, epoch, errors):

@@ -3,7 +3,7 @@ import torch
 from torch import nn
 import torch.nn.functional as torch_f
 
-from handobjectdatasets.queries import BaseQueries, TransQueries
+from shapesdf.datasets.queries import TransQueries
 
 class SFDNet(nn.Module):
     def __init__(self,
@@ -73,8 +73,6 @@ class SFDNet(nn.Module):
         return results, loss
 
     def evaluate_sdf(self, encoding, point): 
-        import pdb
-        pdb.set_trace()
         features = encoding.unsqueeze(2).repeat(1, 1, point.size(2))
         stacked_features = torch.cat((point, features), 1)
         pred_dists = self.sdfpredictor(stacked_features)
