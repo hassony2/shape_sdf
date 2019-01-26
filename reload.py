@@ -12,7 +12,7 @@ import trimesh
 from tqdm import tqdm
 
 import argutils
-from handobjectdatasets import cubes, primitives, shapenet, synthgrasps, shapedataset
+from handobjectdatasets import cubes, primitives, shapedataset
 from handobjectdatasets.queries import BaseQueries, TransQueries
 
 from shapesdf.sdfnet import SFDNet
@@ -28,47 +28,27 @@ if __name__ == "__main__":
             type=str,
             default='synthgrasps',
             choices=[
-                'cubes', 'primitives', 'shapenet',
-                'synthgrasps', 'synthobjs'
+                'cubes', 'primitives'
                 ])
 
     parser.add_argument('--sdf_point_nb', type=int, default=200, help='Points to sample in the cube')
     parser.add_argument('--grid_point_nb', type=int, default=40, help='Number of points on one side of voxel grid')
-    parser.add_argument('--use_cache', action='store_true', help='Use cache')
-    parser.add_argument('--canonical', action='store_true', help='Use cache')
     parser.add_argument(
             '--mini_factor', type=float, default=0.01, help='Ratio in data to use (in ]0, 1[)')
     parser.add_argument(
             '--split', type=str, default='test', help='Usually [train|test]')
-    parser.add_argument('--offset', type=int, default=0, help='point_nb^3 is the number of points sampled in the cube')
 
     # Parallelization params
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--workers', type=int, default=8)
 
     # Saving params
-    parser.add_argument('--checkpoint', default='results')
+    parser.add_argument('--checkpoint', default='results', help='Path to model to load')
 
     args = parser.parse_args()
     argutils.print_args(args)
 
-    if args.dataset == 'shapenet':
-        pose_dataset = shapenet.Shapenet(
-                split=args.train_split,
-                use_cache=args.use_cache,
-                mini_factor=args.mini_factor,
-                canonical=args.canonical)
-    elif args.dataset == 'synthgrasps':
-        pose_dataset = synthgrasps.SynthGrasps(
-                split=args.train_split,
-                use_cache=args.use_cache,
-                root_palm=False,
-                version=25,
-                mini_factor=args.mini_factor,
-                mode='obj',
-                filter_class_ids=None,
-                use_external_points=False)
-    elif args.dataset == 'cubes':
+    if args.dataset == 'cubes':
         pose_dataset = cubes.Cubes(size=1000, mini_factor=args.mini_factor)
     elif args.dataset == 'primitives':
         pose_dataset = primitives.Primitives(size=1000, mini_factor=args.mini_factor)
@@ -94,7 +74,7 @@ if __name__ == "__main__":
 
     for sample_idx, sample in enumerate(tqdm(loader)):
         sample[TransQueries.sdf_points] = uniform_grid.transpose(2, 1)
-        results, loss_val = model(sample, no_loss=True)
+        results, loss_val = model(sample, no_loss=True, get_encoding=True)
 
         # Get cube predictions
         preds = results['pred_dists'].detach().cpu()

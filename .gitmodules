@@ -1,0 +1,3 @@
+[submodule "pyrender_sdf"]
+	path = pyrender_sdf
+	url = git://github.com/hassony2/pyrender_sdf/

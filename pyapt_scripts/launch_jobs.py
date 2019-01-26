@@ -9,8 +9,8 @@ import numpy as np
 train_dataset = 'primitives'
 train_split = 'train'
 
-hidden_layer_nbs = [2, 8]
-hidden_neuron_nbs = [256]
+hidden_layer_nbs = [3]
+hidden_neuron_nbs = [512]
 
 epochs = 500
 

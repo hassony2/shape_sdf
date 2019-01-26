@@ -44,7 +44,8 @@ class SFDNet(nn.Module):
                 sample,
                 no_loss=False,
                 return_features=False,
-                force_objects=False):
+                force_objects=False,
+                get_encoding=False):
         # Prepare inputs/outputs
         inp_points3d = sample[TransQueries.objpoints3d].float().cuda()
         sampled_points = sample[TransQueries.sdf_points].float().cuda().transpose(2, 1)
@@ -57,6 +58,8 @@ class SFDNet(nn.Module):
 
         # Stack shape features and sampled points
         features = shape_features.unsqueeze(2).repeat(1, 1, sampled_points.size(2))
+        if get_encoding:
+            results['features'] = shape_features
         stacked_features = torch.cat((sampled_points, features), 1)
 
         # Predict signed distance values
@@ -68,6 +71,14 @@ class SFDNet(nn.Module):
             loss = self.criterion(pred_dists[:, 0], sdf)
         results['pred_dists'] = pred_dists[:, 0]
         return results, loss
+
+    def evaluate_sdf(self, encoding, point): 
+        import pdb
+        pdb.set_trace()
+        features = encoding.unsqueeze(2).repeat(1, 1, point.size(2))
+        stacked_features = torch.cat((point, features), 1)
+        pred_dists = self.sdfpredictor(stacked_features)
+        return pred_dists
 
 
 class STN3d(nn.Module):
